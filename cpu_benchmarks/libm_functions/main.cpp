@@ -27,6 +27,7 @@ typedef std::chrono::high_resolution_clock Time;
 
 static const string OFILE = "None";
 static const unsigned int SEED = 123456789;
+void foolCompiler(double * arr);
 
 struct stats{
     double m;
@@ -101,7 +102,11 @@ struct stats relativeErrorStats(double * refer, T * _comp, unsigned int size){
 
 REAL * generateArray(string outputfile, unsigned int prec, unsigned long size, long long rangeinf, long long rangesup){
     srand(SEED);
-    REAL * arr = new REAL[size];
+#ifdef USE_INTEL_COMPILER
+    REAL * arr = (REAL*) _mm_malloc(size*sizeof(REAL), 64);
+#else
+    REAL * arr = (REAL*)aligned_alloc(64,size*sizeof(REAL));
+#endif
     cout.precision(prec);
 
     std::ofstream ofile;
@@ -118,10 +123,11 @@ REAL * generateArray(string outputfile, unsigned int prec, unsigned long size, l
 }
 
 int main(int argc, char * argv[]){
-    if(argc < 4){
+    if(argc < 5){
         cerr << "Not enough args\n SIZE (size of the array containing exp inputs)\
             \n RANGEinf RANGEsup (random generation between 2**Rinf and 2**Rsup)\
-            \n Optional: input file containing randon input numbers." << endl;
+            \n Input file: either to drop result (if it does not exist yet) or to read and compare results against,\
+            \n Optional: input file containing random input naumbers." << endl;
         exit(-1);
     }
     double * inputVal;
@@ -138,21 +144,42 @@ int main(int argc, char * argv[]){
     long long RANGEsup = (long long)atoll(argv[3]);
 
     string inputfile("None");
+    string resultfile("RefResults.dat");
     doublePrec = new double[SIZE];
-    singlePrec = new float[SIZE];
-    singlePrecOutput = new float[SIZE];
     singlePrec2Cast = new double[SIZE];
     singlePrec1CastOutput= new double[SIZE];
-    singlePrec1CastInput= new float[SIZE];
-    inputValSinglePrec = new float[SIZE];
+#ifdef USE_INTEL_COMPILER
+    singlePrec            = (float*) _mm_malloc(SIZE*sizeof(float), 64);
+    singlePrecOutput      = (float*) _mm_malloc(SIZE*sizeof(float), 64);
+    singlePrec1CastInput  = (float*) _mm_malloc(SIZE*sizeof(float), 64);
+    inputValSinglePrec    = (float*) _mm_malloc(SIZE*sizeof(float), 64);
+    doublePrec            = (double*) _mm_malloc(SIZE*sizeof(double), 64);
+    singlePrec2Cast       = (double*) _mm_malloc(SIZE*sizeof(double), 64);
+    singlePrec1CastOutput = (double*) _mm_malloc(SIZE*sizeof(double), 64);
+#else
+    singlePrec            = (float*)aligned_alloc(64,SIZE*sizeof(float));
+    singlePrecOutput      = (float*)aligned_alloc(64,SIZE*sizeof(float));
+    singlePrec1CastInput  = (float*)aligned_alloc(64,SIZE*sizeof(float));
+    inputValSinglePrec    = (float*)aligned_alloc(64,SIZE*sizeof(float));
+    doublePrec            = (double*)aligned_alloc(64,SIZE*sizeof(double));
+    singlePrec2Cast       = (double*)aligned_alloc(64,SIZE*sizeof(double));
+    singlePrec1CastOutput = (double*)aligned_alloc(64,SIZE*sizeof(double));
+#endif
 
-    if (argc == 5)
-        inputfile = string(argv[4]);
+    resultfile = string(argv[4]);
+    // dump result in Reference file or read from reference file to compare results to.
 
+    // Generate new random numbers OR read existing file
+    if (argc == 6)
+        inputfile = string(argv[5]);
     if (inputfile.compare("None") != 0){
         std::ifstream ifile;
         ifile.open(inputfile, std::ios::in);
-        inputVal = new double[SIZE];
+#ifdef USE_INTEL_COMPILER
+        inputVal = (double*) _mm_malloc(SIZE*sizeof(double), 64);
+#else
+        inputVal = (double*) aligned_alloc(64,SIZE*sizeof(double));
+#endif
         double e;
         for (int i=0;i<SIZE;i++){
             ifile >> e;
@@ -172,29 +199,30 @@ int main(int argc, char * argv[]){
         auto singlePrec1CastInputTime = 0;
         auto singlePrec1CastOutputTime = 0;
         for(int j = 0; j< LOOP; j++){
-            // Warm up
-            for (int i=0;i<SIZE;i++){
-                doublePrec[i] = exp(inputVal[i]);
-            }
-            // double precision
-            auto t0 = Time::now();
-            for (int i=0;i<SIZE;i++){
-                doublePrec[i] = exp(inputVal[i]);
-            }
-            auto t1 = Time::now();
-            doublePrecTime += std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count();
 
             // Warm up
             for (int i=0;i<SIZE;i++){
                 singlePrecOutput[i] = expf(inputValSinglePrec[i]);
             }
             // single precision NO cast
-            t0 = Time::now();
+            auto t0 = Time::now();
             for (int i=0;i<SIZE;i++){
                 singlePrecOutput[i] = expf(inputValSinglePrec[i]);
             }
-            t1 = Time::now();
+            auto t1 = Time::now();
             singlePrecNoCastTime += std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count();
+
+            // Warm up
+            for (int i=0;i<SIZE;i++){
+                doublePrec[i] = exp(inputVal[i]);
+            }
+            // double precision
+            t0 = Time::now();
+            for (int i=0;i<SIZE;i++){
+                doublePrec[i] = exp(inputVal[i]);
+            }
+            t1 = Time::now();
+            doublePrecTime += std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count();
 
             // Warm up
             for (int i=0;i<SIZE;i++){
@@ -271,6 +299,7 @@ int main(int argc, char * argv[]){
              << relErrStats1CastOut.M                                                                    << "\t"
              << relErrStatsNoCast.M                                                                         << endl;
 
+        foolCompiler(doublePrec);
         //std::cerr << "Expf("<<singlePrec[SIZE-1]<<") float: " << singlePrecTime/1000. << " ns " << inputVal[SIZE-1]<< " with cast cost." << std::endl;
         //std::cerr << "Expf("<<singlePrec[SIZE-1]<<") float: " << singlePrecTime/1000. << " ns " << inputValSinglePrec[SIZE-1]<< " without cast cost." << std::endl;
         //std::cerr << "Exp("<< doublePrec[SIZE-1]<<") double: " << doublePrecTime/1000. << " ns " << inputVal[SIZE-1]<<std::endl
