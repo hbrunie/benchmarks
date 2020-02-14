@@ -12,6 +12,7 @@ using namespace std;
 #define EXTLOOP 1
 #define LOOP 10000
 #define TIME 1e6
+#define ALIGNEMENT 64
 
 #define REAL double
 using namespace std;
@@ -79,14 +80,16 @@ double standardDeviation(double arr[],
 template <typename T>
 struct stats relativeErrorStats(double * refer, T * _comp, unsigned int size){
     struct stats relerrStats;
-    double * comp;
+    double *comp;
     if constexpr (std::is_same<T,float>::value){
-        comp  = new double(size);
+        comp  = (double*) aligned_alloc(ALIGNEMENT, size*sizeof(double));
         for(int i=0; i<size ;i++)
             comp[i] = (double) _comp[i];
     }else if constexpr (std::is_same<T,double>::value){
         comp = _comp;
     }
+    for(int i=0; i<size ;i++)
+        comp[i] = abs(refer[i]-comp[i]) / abs(refer[i]);
 
     relerrStats.m = *min_element(comp, comp+size);
     relerrStats.M = *max_element(comp, comp+size);
@@ -95,7 +98,7 @@ struct stats relativeErrorStats(double * refer, T * _comp, unsigned int size){
     sort(comp, comp+size);
     relerrStats.med = comp[(unsigned int) (size/2)];
     if constexpr (std::is_same<T,float>::value){
-        delete []comp;
+        free(comp);
     }
     return relerrStats;
 }
@@ -103,13 +106,13 @@ struct stats relativeErrorStats(double * refer, T * _comp, unsigned int size){
 REAL * generateArray(string outputfile, unsigned int prec, unsigned long size, long long rangeinf, long long rangesup){
     srand(SEED);
 #ifdef USE_INTEL_COMPILER
-    REAL * arr = (REAL*) _mm_malloc(size*sizeof(REAL), 64);
+    REAL * arr = (REAL*) _mm_malloc(size*sizeof(REAL), ALIGNEMENT);
 #else
-    REAL * arr = (REAL*)aligned_alloc(64,size*sizeof(REAL));
+    REAL * arr = (REAL*)aligned_alloc(ALIGNEMENT,size*sizeof(REAL));
 #endif
-    cout.precision(prec);
 
     std::ofstream ofile;
+    ofile.precision(prec);
     ofile.open(outputfile, ios::app); //app is append which means it will put the text at the end
     double e;
     for(int i=0;i<size;i++){
@@ -132,6 +135,7 @@ int main(int argc, char * argv[]){
     }
     double * inputVal;
     double * doublePrec;
+    double * refResults;
     float  * singlePrecOutput;
     double * singlePrec2Cast;
     double * singlePrec1CastOutput;
@@ -143,32 +147,48 @@ int main(int argc, char * argv[]){
     long long RANGEinf = (long long)atoll(argv[2]);
     long long RANGEsup = (long long)atoll(argv[3]);
 
+    bool dumpRefResults = false;
     string inputfile("None");
-    string resultfile("RefResults.dat");
-    doublePrec = new double[SIZE];
-    singlePrec2Cast = new double[SIZE];
-    singlePrec1CastOutput= new double[SIZE];
+    string resultfile(argv[4]);
+    refResults            = new double[SIZE];
+    doublePrec            = new double[SIZE];
+    singlePrec2Cast       = new double[SIZE];
+    singlePrec1CastOutput = new double[SIZE];
 #ifdef USE_INTEL_COMPILER
-    singlePrec            = (float*) _mm_malloc(SIZE*sizeof(float), 64);
-    singlePrecOutput      = (float*) _mm_malloc(SIZE*sizeof(float), 64);
-    singlePrec1CastInput  = (float*) _mm_malloc(SIZE*sizeof(float), 64);
-    inputValSinglePrec    = (float*) _mm_malloc(SIZE*sizeof(float), 64);
-    doublePrec            = (double*) _mm_malloc(SIZE*sizeof(double), 64);
-    singlePrec2Cast       = (double*) _mm_malloc(SIZE*sizeof(double), 64);
-    singlePrec1CastOutput = (double*) _mm_malloc(SIZE*sizeof(double), 64);
+    refResults = (double*) _mm_malloc(SIZE*sizeof(double), ALIGNEMENT);
+    singlePrec            = (float*) _mm_malloc(SIZE*sizeof(float), ALIGNEMENT);
+    singlePrecOutput      = (float*) _mm_malloc(SIZE*sizeof(float), ALIGNEMENT);
+    singlePrec1CastInput  = (float*) _mm_malloc(SIZE*sizeof(float), ALIGNEMENT);
+    inputValSinglePrec    = (float*) _mm_malloc(SIZE*sizeof(float), ALIGNEMENT);
+    doublePrec            = (double*) _mm_malloc(SIZE*sizeof(double), ALIGNEMENT);
+    singlePrec2Cast       = (double*) _mm_malloc(SIZE*sizeof(double), ALIGNEMENT);
+    singlePrec1CastOutput = (double*) _mm_malloc(SIZE*sizeof(double), ALIGNEMENT);
 #else
-    singlePrec            = (float*)aligned_alloc(64,SIZE*sizeof(float));
-    singlePrecOutput      = (float*)aligned_alloc(64,SIZE*sizeof(float));
-    singlePrec1CastInput  = (float*)aligned_alloc(64,SIZE*sizeof(float));
-    inputValSinglePrec    = (float*)aligned_alloc(64,SIZE*sizeof(float));
-    doublePrec            = (double*)aligned_alloc(64,SIZE*sizeof(double));
-    singlePrec2Cast       = (double*)aligned_alloc(64,SIZE*sizeof(double));
-    singlePrec1CastOutput = (double*)aligned_alloc(64,SIZE*sizeof(double));
+    refResults            = (double*) aligned_alloc(ALIGNEMENT,SIZE*sizeof(double));
+    singlePrec            = (float*)aligned_alloc(ALIGNEMENT,SIZE*sizeof(float));
+    singlePrecOutput      = (float*)aligned_alloc(ALIGNEMENT,SIZE*sizeof(float));
+    singlePrec1CastInput  = (float*)aligned_alloc(ALIGNEMENT,SIZE*sizeof(float));
+    inputValSinglePrec    = (float*)aligned_alloc(ALIGNEMENT,SIZE*sizeof(float));
+    doublePrec            = (double*)aligned_alloc(ALIGNEMENT,SIZE*sizeof(double));
+    singlePrec2Cast       = (double*)aligned_alloc(ALIGNEMENT,SIZE*sizeof(double));
+    singlePrec1CastOutput = (double*)aligned_alloc(ALIGNEMENT,SIZE*sizeof(double));
 #endif
 
     resultfile = string(argv[4]);
     // dump result in Reference file or read from reference file to compare results to.
-
+    ofstream ofile;
+    ifstream ifile(resultfile.c_str());
+    if(ifile.good()){// Reference Results exist in this file.
+        double e;
+        for (int i=0;i<SIZE;i++){
+            ifile >> e;
+            refResults[i] = e;
+        }
+    }else{//No reference Results yet. Need to generate and dump them.
+        ofile.open(resultfile, ios::out);
+        ofile.precision();
+        dumpRefResults = true;
+    }
     // Generate new random numbers OR read existing file
     if (argc == 6)
         inputfile = string(argv[5]);
@@ -176,9 +196,9 @@ int main(int argc, char * argv[]){
         std::ifstream ifile;
         ifile.open(inputfile, std::ios::in);
 #ifdef USE_INTEL_COMPILER
-        inputVal = (double*) _mm_malloc(SIZE*sizeof(double), 64);
+        inputVal = (double*) _mm_malloc(SIZE*sizeof(double), ALIGNEMENT);
 #else
-        inputVal = (double*) aligned_alloc(64,SIZE*sizeof(double));
+        inputVal = (double*) aligned_alloc(ALIGNEMENT,SIZE*sizeof(double));
 #endif
         double e;
         for (int i=0;i<SIZE;i++){
@@ -192,6 +212,7 @@ int main(int argc, char * argv[]){
     for(int i = 0; i < SIZE; i++)
         inputValSinglePrec[i] = (float) inputVal[i];
 
+    bool once = true;
     for(int k = 0; k< EXTLOOP; k++){
         auto doublePrecTime = 0;
         auto singlePrecNoCastTime = 0;
@@ -223,6 +244,13 @@ int main(int argc, char * argv[]){
             }
             t1 = Time::now();
             doublePrecTime += std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count();
+            if(once && dumpRefResults){
+                double tmp;
+                once = false;
+                for (int i=0;i<SIZE;i++){
+                    ofile << doublePrec[i] << endl;
+                }
+            }
 
             // Warm up
             for (int i=0;i<SIZE;i++){
@@ -261,10 +289,10 @@ int main(int argc, char * argv[]){
             singlePrec1CastOutputTime+= std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count();
         }
         // Display of time + relative error compute
-        struct stats relErrStats2Cast = relativeErrorStats<double>(doublePrec, singlePrec2Cast, SIZE);
-        struct stats relErrStats1CastIn = relativeErrorStats<float>(doublePrec, singlePrec1CastInput, SIZE);
+        struct stats relErrStats2Cast    = relativeErrorStats<double>(doublePrec, singlePrec2Cast, SIZE);
+        struct stats relErrStats1CastIn  = relativeErrorStats<float> (doublePrec, singlePrec1CastInput, SIZE);
         struct stats relErrStats1CastOut = relativeErrorStats<double>(doublePrec, singlePrec1CastOutput, SIZE);
-        struct stats relErrStatsNoCast = relativeErrorStats<float>(doublePrec, singlePrecOutput, SIZE);
+        struct stats relErrStatsNoCast   = relativeErrorStats<float> (doublePrec, singlePrecOutput, SIZE);
         cerr.precision(2);
         cerr << "time(ns) RelErrMean med stddev min MAX" <<endl;
         cerr << "doublePrec singlePrec2casts singlePrec1CastIn sinblePrec1castOUt singlePrecNoCast" << endl;
@@ -300,9 +328,6 @@ int main(int argc, char * argv[]){
              << relErrStatsNoCast.M                                                                         << endl;
 
         foolCompiler(doublePrec);
-        //std::cerr << "Expf("<<singlePrec[SIZE-1]<<") float: " << singlePrecTime/1000. << " ns " << inputVal[SIZE-1]<< " with cast cost." << std::endl;
-        //std::cerr << "Expf("<<singlePrec[SIZE-1]<<") float: " << singlePrecTime/1000. << " ns " << inputValSinglePrec[SIZE-1]<< " without cast cost." << std::endl;
-        //std::cerr << "Exp("<< doublePrec[SIZE-1]<<") double: " << doublePrecTime/1000. << " ns " << inputVal[SIZE-1]<<std::endl
     }
     return 0;
 }

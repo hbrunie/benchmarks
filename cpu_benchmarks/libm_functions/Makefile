@@ -1,6 +1,6 @@
-all: gnu.exe intel.exe
+all: gnu.exe-ref gnu.exe-O1 gnu.exe-O2 gnu.exe-O3 intel.exe-ref intel.exe-O1 intel.exe-O2 intel.exe-O3  intel.exe-conservative  intel.exe-agressive  intel.exe-super-agressive
 
-OPTIONS= -std=c++17
+OPTIONS= -std=c++17 -g
 ## None
 OPTIM_ALL0 = -O0
 ## First degree
@@ -17,24 +17,33 @@ OPTIM_INTEL2 = -O3 $(INTEL_REPORT)
 ## Super Agressive
 OPTIM_INTEL3 = -O3 $(INTEL_REPORT) -fp-model fast=2
 
-gnu.exe: main.cpp foolCompiler.cpp
-	g++ $^ $(OPTIONS) $(OPTIM_ALL0) -o $@-ref
-	g++ $^ $(OPTIONS) $(OPTIM_ALL1) -o $@-O1
-	g++ $^ $(OPTIONS) $(OPTIM_ALL2) -o $@-O2
-	g++ $^ $(OPTIONS) $(OPTIM_ALL3) -o $@-O3
+gnu.exe-ref: main.cpp foolCompiler.cpp
+	g++ $^ $(OPTIONS) $(OPTIM_ALL0) -o $@
+gnu.exe-O1: main.cpp foolCompiler.cpp
+	g++ $^ $(OPTIONS) $(OPTIM_ALL1) -o $@
+gnu.exe-O2: main.cpp foolCompiler.cpp
+	g++ $^ $(OPTIONS) $(OPTIM_ALL2) -o $@
+gnu.exe-O3: main.cpp foolCompiler.cpp
+	g++ $^ $(OPTIONS) $(OPTIM_ALL3) -o $@
 
-intel.exe: main.cpp foolCompiler.cpp
-	icpc $^ $(OPTIONS) $(OPTIM_ALL0) -o $@-ref
-	icpc $^ $(OPTIONS) $(OPTIM_ALL1) -o $@-O1
-	icpc $^ $(OPTIONS) $(OPTIM_ALL2) -o $@-O2
-	icpc $^ $(OPTIONS) $(OPTIM_ALL3) -o $@-O3
-	icpc $^ $(OPTIONS) $(OPTIM_INTEL1) -o $@-conservative
-	icpc $^ $(OPTIONS) $(OPTIM_INTEL2) -o $@-agressive
-	icpc $^ $(OPTIONS) $(OPTIM_INTEL3) -o $@-super-agressive
+intel.exe-ref: main.cpp foolCompiler.cpp
+	icpc $^ $(OPTIONS) $(OPTIM_ALL0) -o $@
+intel.exe-O1: main.cpp foolCompiler.cpp
+	icpc $^ $(OPTIONS) $(OPTIM_ALL1) -o $@
+intel.exe-O2: main.cpp foolCompiler.cpp
+	icpc $^ $(OPTIONS) $(OPTIM_ALL2) -o $@
+intel.exe-O3: main.cpp foolCompiler.cpp
+	icpc $^ $(OPTIONS) $(OPTIM_ALL3) -o $@
+intel.exe-conservative: main.cpp foolCompiler.cpp
+	icpc $^ $(OPTIONS) $(OPTIM_INTEL1) -o $@
+intel.exe-agressive: main.cpp foolCompiler.cpp
+	icpc $^ $(OPTIONS) $(OPTIM_INTEL2) -o $@
+intel.exe-super-agressive: main.cpp foolCompiler.cpp
+	icpc $^ $(OPTIONS) $(OPTIM_INTEL3) -o $@
 
 clean:
 	rm -f *.o
 
 cleanall:
-	rm -f intel.exe* gnu.exe* rm main.cpp.annot main.optrpt
+	rm -f intel.exe* gnu.exe* rm *.annot *.optrpt
 
